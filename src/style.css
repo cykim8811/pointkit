@@ -1,0 +1,2 @@
+html.pointkit-active, html.pointkit-active * { cursor: crosshair !important; }
+.pointkit-target { outline: 2px solid #5076b8 !important; outline-offset: 3px !important; }

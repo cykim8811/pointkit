@@ -1,0 +1,72 @@
+{
+  "name": "@cykim8811/pointkit",
+  "version": "0.1.0",
+  "description": "Point at UI elements and copy precise context for your AI coding agent.",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./auto": {
+      "types": "./dist/auto.d.ts",
+      "import": "./dist/auto.js"
+    },
+    "./style.css": "./dist/style.css",
+    "./package.json": "./package.json"
+  },
+  "unpkg": "./dist/pointkit.global.js",
+  "jsdelivr": "./dist/pointkit.global.js",
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "sideEffects": [
+    "./dist/auto.js",
+    "./dist/style.css"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "npm run build && node --test tests/package.test.mjs && playwright test",
+    "test:browser": "playwright test",
+    "typecheck": "tsc --noEmit --strict --lib ES2022,DOM --module NodeNext --moduleResolution NodeNext tests/types.mts",
+    "prepack": "npm run build",
+    "dev": "node scripts/serve.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cykim8811/pointkit.git"
+  },
+  "bugs": {
+    "url": "https://github.com/cykim8811/pointkit/issues"
+  },
+  "homepage": "https://github.com/cykim8811/pointkit#readme",
+  "author": "cykim8811",
+  "license": "MIT",
+  "keywords": [
+    "ai",
+    "agent",
+    "context",
+    "element-picker",
+    "dom",
+    "clipboard",
+    "developer-tools"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
+  }
+}

@@ -1,0 +1,7 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Pointkit demo</title><link rel="stylesheet" href="/examples/demo.css"></head>
+<body><main><h1>Pointkit</h1><p>Press <kbd>⌘C</kbd> or <kbd>Ctrl+C</kbd> with nothing selected, then click an element. <kbd>Esc</kbd> cancels.</p>
+<section id="demo"><h2>Point to a UI element</h2><button id="primary" type="button"><span>Example button</span></button><a id="example-link" href="#destination">Example link</a><div class="anonymous"><span>Unidentified element</span><span>Second element</span></div></section>
+<p id="selection">Select this text and copy it normally.</p><label>Input <input id="input" value="Native input copy"></label><div id="editable" contenteditable="true" role="textbox" aria-label="Editable text">Native editable copy</div>
+<p id="private-parent">Public context <span data-pointkit-private>private example token</span></p><p id="ignored" data-pointkit-ignore>Ignored by the picker</p>
+<p id="status" role="status">Ready</p><pre id="output" data-pointkit-ignore></pre></main><script type="module" src="/examples/demo.js"></script></body></html>
