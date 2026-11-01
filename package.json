@@ -1,6 +1,6 @@
 {
   "name": "@cykim8811/pointkit",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Point at UI elements and copy precise context for your AI coding agent.",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -69,6 +69,7 @@
   "devDependencies": {
     "@playwright/test": "^1.64.1",
     "esbuild": "^0.28.2",
+    "html-to-image": "^1.11.13",
     "typescript": "^7.0.2"
   }
 }

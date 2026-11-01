@@ -6,9 +6,9 @@ With nothing selected, press **⌘C** on macOS or **Ctrl+C** elsewhere to start 
 
 Selected text and focused text editors keep their normal copy behavior. **Esc** cancels. Picking never executes the target's click action.
 
-- No runtime dependencies or framework requirement
+- No external runtime package installation or framework requirement
 - TypeScript types, ESM, CommonJS, and a standalone browser bundle
-- No network requests, telemetry, backend, or automatic agent connection
+- Local-only by default; optional sharing uploads only after confirmation; no telemetry
 - Explicit lifecycle, custom context hooks, ignored and private areas
 
 ## Install
@@ -90,7 +90,7 @@ export function DevTools() {
 
 ## Share a point as a link
 
-The upcoming 0.2.0 API adds optional uploads. Without `share`, existing local JSON copying stays unchanged.
+Optional uploads are available since 0.2.0. The upcoming 0.3.0 flow adds an element PNG preview and a bottom note composer. Without `share`, existing local JSON copying stays unchanged.
 
 ```js
 const picker = createPointkit({
@@ -110,7 +110,7 @@ const picker = createPointkit({
 });
 ```
 
-The service returns a 128-bit random ID. Anyone holding the URL can read it: `/points/{id}` displays a page, `Accept: application/json` on that URL or `/api/points/{id}` returns JSON for an agent. Default expiry is 7 days. Upload and deletion require credentials. The payload contains the same DOM context as local copying, plus your explicit `getContext` additions; Pointkit does not add screenshots.
+The service returns a 128-bit random ID. Anyone holding the URL can read it: `/points/{id}` displays a page, `Accept: application/json` on that URL or `/api/points/{id}` returns JSON for an agent. Default expiry is 7 days. Upload and deletion require credentials. The payload contains the DOM context, your explicit `getContext` additions, an optional note, and a PNG of the selected element. The image is a DOM rendering of the element, not a full-screen or browser-tab screenshot.
 
 A token embedded in a frontend is visible to its users. Protect server credentials behind your own upload proxy for public applications. Requests use omitted credentials by default; the same-origin service UI explicitly uses its HttpOnly session cookie. Uploads reject redirects, time out after 15 seconds, and report failure without silently copying a broken link. Promise-backed clipboard writes are used where supported so the original click can authorize the copy while upload is pending. `onUpload` runs as soon as the server returns a receipt; use it to retain the URL and deletion token even if the clipboard write fails.
 
@@ -125,6 +125,16 @@ const receipt = await uploadPoint(describeElement(element), {
 ```
 
 See [the points service guide](service/README.md) to run or deploy the HTTP + SQLite service. The service source stays in GitHub; the npm artifact still contains only the browser library, styles, types and documentation.
+
+### Image preview and memo (0.3.0)
+
+With `share` enabled, selecting an element now opens a bottom composer. It shows a PNG preview and a memo textarea. Type a note (up to 4,000 characters), then click **공유 링크 복사** or press Cmd+Enter / Ctrl+Enter. Nothing uploads before submission; Escape or Cancel discards the draft. The original element's click is still suppressed. If clipboard permission fails after a successful upload, the composer preserves the saved receipt and retries copying the same link instead of creating duplicates.
+
+Private/input elements are masked at the root or excluded from descendant rendering. Editable text values, private subtrees and the composer itself are not included in captures. Images are bounded to 1,280 pixels on the longest side and 1 MiB. DOM image rendering may fail for cross-origin resources, tainted canvas, unsupported browser/CSS features, or restrictive CSP. The composer displays the failure and requires an explicit **이미지 없이 공유** action to continue without an image. Captures use bundled [html-to-image](https://github.com/bubkoo/html-to-image) (MIT; license included in the distribution).
+
+Set `composer:false` to retain immediate sharing; set `capture:false` to disable image capture. These are separate controls. The programmatic `picker.copy(element, {note, image})` API bypasses the composer; pass `image:null` to omit the image for that call. Local-only copying does not create images or open the composer.
+
+The JSON response exposes the memo at `context.note` and the image as `image.url` with PNG metadata. Agents can fetch that URL directly. PNG data is kept out of public JSON responses. Images expire and are deleted with their parent point.
 
 ## Copied context
 
@@ -149,6 +159,8 @@ File locations are **application-provided hints** through `getContext`; Pointkit
 
 | Option | Default | Purpose |
 | --- | --- | --- |
+| `composer` | Sharing only | Bottom PNG preview and memo before upload. `false` retains immediate copy. |
+| `capture` | Sharing only | Capture a redacted element PNG. `false` omits images. |
 | `document` | Current document | Install in a specific browser document. |
 | `shortcut` | Cmd+C / Ctrl+C | Set to `false` to enable only programmatic picking. |
 | `styles` | `true` | Set to `false` to supply the stylesheet yourself. |
@@ -190,7 +202,7 @@ const selector = getSelector(element);
 <div data-pointkit-private>Do not include this text in copied context</div>
 ```
 
-Input, textarea, and select values are omitted. Script/style text and descendants marked private are removed from text excerpts; excerpts are limited to 600 characters. URL query strings and fragments are omitted. Visible page text and allowlisted labels/attributes are still part of the context, so mark sensitive sections explicitly. Attributes supplied in your own `getContext` are under your control.
+Input, textarea, select and editable text values are omitted. Script/style text and descendants marked private are removed from text excerpts; excerpts are limited to 600 characters. URL query strings and fragments are omitted. Visible page text and allowlisted labels/attributes are still part of the context, so mark sensitive sections explicitly. Attributes supplied in your own `getContext` are under your control.
 
 ### Content Security Policy
 
@@ -201,7 +213,7 @@ import '@cykim8811/pointkit/style.css';
 const picker = createPointkit({ styles: false });
 ```
 
-Or supply a nonce that your CSP permits: `createPointkit({ nonce: 'your-style-nonce' })`. No inline scripts or `eval` are required. External stylesheets must also be loaded into any shadow root you want to highlight when `styles:false`.
+Or supply a nonce that your CSP permits: `createPointkit({ nonce: 'your-style-nonce' })`. No inline scripts or `eval` are required. External stylesheets must also be loaded into any shadow root you want to highlight when `styles:false`. Image preview/capture requires `img-src` to permit `data:` (and `blob:` where used by the browser). The hosted service configures these image sources while keeping scripts and styles same-origin.
 
 ### Browser behavior
 

@@ -10,3 +10,5 @@ await Promise.all([
   build({...common, entryPoints:['src/index.js'], outfile:'dist/pointkit.global.js', format:'iife', globalName:'Pointkit'})
 ]);
 await Promise.all(['index.d.ts','auto.d.ts','style.css'].map(file => cp('src/'+file, 'dist/'+file)));
+
+await cp('node_modules/html-to-image/LICENSE', 'dist/HTML_TO_IMAGE_LICENSE');

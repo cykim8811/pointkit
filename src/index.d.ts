@@ -15,7 +15,21 @@ export interface CopyEvent {
   context: ElementContext;
   text: string;
 }
+export interface ElementImage {
+  data_url: string;
+  width: number;
+  height: number;
+  redacted?: boolean;
+}
+export interface PointImage {
+  url: string;
+  mime_type: 'image/png';
+  width: number;
+  height: number;
+  bytes: number;
+}
 export interface PointReceipt {
+  image?: PointImage;
   id: string;
   url: string;
   api_url: string;
@@ -29,8 +43,12 @@ export interface ShareOptions {
   expiresIn?: number;
   credentials?: RequestCredentials;
 }
-export declare function uploadPoint(context: ElementContext, options: ShareOptions): Promise<PointReceipt>;
+export declare function uploadPoint(context: ElementContext, options: ShareOptions, attachments?: {image?: ElementImage | null}): Promise<PointReceipt>;
 export interface PointkitOptions {
+  /** Sharing opens a bottom note composer by default. false keeps immediate copy. */
+  composer?: boolean;
+  /** Include a redacted element PNG by default in sharing mode. */
+  capture?: boolean;
   /** Upload context and copy a link instead of JSON. Omit to keep local-only copying. */
   share?: ShareOptions;
   /** Preserve this receipt if you need the delete token or clipboard access fails. */
@@ -52,7 +70,7 @@ export interface Pointkit {
   activate(): void;
   deactivate(): void;
   isActive(): boolean;
-  copy(element: Element): Promise<ElementContext>;
+  copy(element: Element, details?: {note?: string; image?: ElementImage | null}): Promise<ElementContext>;
   destroy(): void;
 }
 export declare function createPointkit(options?: PointkitOptions): Pointkit;

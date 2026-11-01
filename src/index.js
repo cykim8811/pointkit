@@ -1,4 +1,6 @@
 import css from './style.css';
+import {captureElement} from './capture.js';
+import {openComposer} from './composer.js';
 import { uploadPoint } from './share.js';
 export { uploadPoint } from './share.js';
 
@@ -51,9 +53,9 @@ export function describeElement(element) {
     if (element.hasAttribute(name)) attributes[name] = element.getAttribute(name);
   }
   let text = '';
-  if (!element.closest('[data-pointkit-private], input, textarea, select')) {
+  if (!element.closest('[data-pointkit-private], input, textarea, select, [contenteditable]:not([contenteditable="false"])')) {
     const clone = element.cloneNode(true);
-    clone.querySelectorAll('script, style, template, input, textarea, select, [data-pointkit-private]').forEach(node => node.remove());
+    clone.querySelectorAll('script, style, template, input, textarea, select, [contenteditable]:not([contenteditable="false"]), [data-pointkit-private]').forEach(node => node.remove());
     text = (clone.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 600);
   }
   const shadowHosts = [];
@@ -79,7 +81,7 @@ export function createPointkit(options = {}) {
   if (!doc?.defaultView) throw new Error('Create Pointkit in a browser (for example, inside a mount effect).');
   if (instances.has(doc)) return instances.get(doc);
   const win = doc.defaultView;
-  let active = false, hovered = null, previousFocus = null, destroyed = false;
+  let active = false, hovered = null, previousFocus = null, destroyed = false, closeComposer=null;
   let markerAdded = false, originalTargetMarked = false;
   const events = new win.AbortController();
   const shadowStyles = new Map();
@@ -118,6 +120,7 @@ export function createPointkit(options = {}) {
   }
   function activate() {
     if (destroyed || active) return;
+    if(closeComposer && !closeComposer())return;
     active = true;
     previousFocus = doc.activeElement;
     markerAdded = !doc.documentElement.classList.contains('pointkit-active');
@@ -131,42 +134,58 @@ export function createPointkit(options = {}) {
     const action = element.closest(actionSelector) || element;
     return options.filter && !options.filter(action) ? null : action;
   }
-  async function copy(element) {
+  function contextFor(element) {
     if (destroyed) throw new Error('This Pointkit instance has been destroyed.');
     if (!element || element.ownerDocument !== doc) throw new Error('The element must belong to this Pointkit document.');
     const base = describeElement(element);
     const extra = options.getContext?.(element, base) ?? {};
-    if (extra && typeof extra.then === 'function') throw new TypeError('getContext must return synchronously to preserve clipboard user activation.');
-    const context = { ...extra, ...base };
-    deactivate();
+    if (extra && typeof extra.then === 'function') throw new TypeError('getContext must return synchronously.');
+    return { ...extra, ...base };
+  }
+  async function writeContext(element,context,imagePromise=Promise.resolve(null),existingReceipt=null) {
     if (!win.navigator.clipboard?.writeText) throw new Error('Clipboard access requires HTTPS or localhost and a user gesture.');
-    let text = JSON.stringify(context, null, 2), receipt;
+    let text = JSON.stringify(context, null, 2), receipt=existingReceipt;
     if (options.share) {
-      const shared = uploadPoint(context, { ...options.share, endpoint:new URL(options.share.endpoint, doc.URL).href }).then(result => {
+      const shared = existingReceipt ? Promise.resolve(existingReceipt.url) : imagePromise.then(image=>uploadPoint(context, { ...options.share, endpoint:new URL(options.share.endpoint, doc.URL).href }, {image})).then(result => {
         receipt=result; text=result.url; options.onUpload?.(result); return text;
       });
-      // Start clipboard permission inside the click, before waiting for the server.
-      // Promise-backed ClipboardItem preserves user activation on Safari as well.
       const writing = win.ClipboardItem && win.navigator.clipboard.write
         ? win.navigator.clipboard.write([new win.ClipboardItem({'text/plain':shared.then(value => new win.Blob([value], {type:'text/plain'}))})])
         : shared.then(value => win.navigator.clipboard.writeText(value));
       const [uploaded, written] = await Promise.allSettled([shared, writing]);
       if(uploaded.status==='rejected') throw uploaded.reason;
-      if(written.status==='rejected') throw written.reason;
+      text=uploaded.value;
+      if(written.status==='rejected') {const error=new Error('Point는 저장됐지만 링크를 복사하지 못했습니다. 다시 복사해주세요.');error.pointReceipt=receipt;throw error;}
     } else await win.navigator.clipboard.writeText(text);
     options.onCopy?.({ element, context, text, ...(receipt ? {receipt} : {}) });
+    return receipt;
+  }
+  async function copy(element,details={}) {
+    const context=contextFor(element);
+    if(details.note)context.note=details.note.slice(0,4000);
+    deactivate();
+    const image=details.image!==undefined ? Promise.resolve(details.image) : options.share && options.capture!==false ? captureElement(element) : Promise.resolve(null);
+    await writeContext(element,context,image);
     return context;
+  }
+  function select(element) {
+    if(!options.share || options.composer===false) {void copy(element).catch(emitError);return;}
+    const context=contextFor(element);deactivate();
+    closeComposer=openComposer({doc,element,context,capture:options.capture===false?null:()=>captureElement(element),
+      onSubmit:(note,image,receipt)=>writeContext(element,{...context,...(note?{note}: {})},Promise.resolve(image),receipt),
+      onClose:()=>{closeComposer=null;},onReselect:activate});
   }
   function intercept(event) {
     event.preventDefault();
     event.stopImmediatePropagation();
   }
   doc.addEventListener('keydown', event => {
+    if(event.key==='Escape' && closeComposer){intercept(event);closeComposer();return;}
     if (event.key === 'Escape' && active) { intercept(event); deactivate(); return; }
     if (options.shortcut === false || event.key.toLowerCase() !== 'c' || !(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey || event.isComposing || event.repeat || event.defaultPrevented) return;
     if (selectionExists(doc) || editing(doc)) { deactivate(); return; }
     intercept(event);
-    if (active && hovered) void copy(hovered).catch(emitError);
+    if (active && hovered) {try{select(hovered);}catch(error){emitError(error);}}
     else activate();
   }, { capture: true, signal: events.signal });
   doc.addEventListener('pointerover', event => {
@@ -178,7 +197,7 @@ export function createPointkit(options = {}) {
     intercept(event);
     try {
       const element = candidate(event);
-      if (element) void copy(element).catch(emitError);
+      if (element) select(element);
     } catch (error) { emitError(error); }
   }, { capture: true, signal: events.signal });
   win.addEventListener('blur', deactivate, { signal: events.signal });
@@ -189,6 +208,7 @@ export function createPointkit(options = {}) {
     destroy() {
       if (destroyed) return;
       deactivate();
+      closeComposer?.(true);
       destroyed = true;
       events.abort();
       style?.remove();

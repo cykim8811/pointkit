@@ -116,7 +116,7 @@ test('sharing uploads first and copies only the returned link with deletion rece
   await new Promise(resolve=>setTimeout(resolve,100));
   await route.fulfill({status:201,json:{id,url,api_url:'http://127.0.0.1:4173/api/points/'+id,delete_token:'delete-only-token',expires_at:'2030-01-01T00:00:00Z'}});
  });
- await page.evaluate(async()=>{window.picker.destroy();const {createPointkit}=await import('/dist/index.js');window.picker=createPointkit({share:{endpoint:'/api/points',token:'write-only',expiresIn:3600},onUpload:receipt=>window.receipt=receipt,onCopy:event=>window.copied=event,onError:error=>window.shareError=error.message});});
+ await page.evaluate(async()=>{window.picker.destroy();const {createPointkit}=await import('/dist/index.js');window.picker=createPointkit({composer:false,capture:false,share:{endpoint:'/api/points',token:'write-only',expiresIn:3600},onUpload:receipt=>window.receipt=receipt,onCopy:event=>window.copied=event,onError:error=>window.shareError=error.message});});
  await page.keyboard.press('Meta+c');const box=await page.locator('#primary').boundingBox();await page.mouse.click(box.x+5,box.y+5);
  await page.waitForFunction(()=>Boolean(window.copied));expect(await page.evaluate(()=>navigator.clipboard.readText())).toBe(url);
  expect(uploaded.context.selector).toBe('#primary');expect(uploaded.expires_in).toBe(3600);
@@ -125,7 +125,41 @@ test('sharing uploads first and copies only the returned link with deletion rece
 
 test('failed uploads report an error instead of copying a misleading link',async({page})=>{
  await page.route('**/api/points',route=>route.fulfill({status:401,json:{error:'An upload key is required.'}}));
- await page.evaluate(async()=>{window.picker.destroy();const {createPointkit}=await import('/dist/index.js');window.picker=createPointkit({share:{endpoint:'/api/points'},onCopy:()=>window.unexpectedCopy=true,onError:error=>window.shareError=error.message});});
+ await page.evaluate(async()=>{window.picker.destroy();const {createPointkit}=await import('/dist/index.js');window.picker=createPointkit({composer:false,capture:false,share:{endpoint:'/api/points'},onCopy:()=>window.unexpectedCopy=true,onError:error=>window.shareError=error.message});});
  await page.keyboard.press('Control+c');const box=await page.locator('#primary').boundingBox();await page.mouse.click(box.x+5,box.y+5);
  await page.waitForFunction(()=>Boolean(window.shareError));expect(await page.evaluate(()=>window.shareError)).toBe('An upload key is required.');expect(await page.evaluate(()=>window.unexpectedCopy)).toBeUndefined();
+});
+
+test('sharing composer waits for memo, captures a PNG, and cancels without uploading',async({page})=>{
+ let uploads=0,payload;
+ const url='http://127.0.0.1:4173/points/'+'b'.repeat(32);
+ await page.route('**/api/points',async route=>{uploads++;payload=route.request().postDataJSON();await route.fulfill({status:201,json:{id:'b'.repeat(32),url,delete_token:'delete',expires_at:'2030-01-01',api_url:url.replace('/points/','/api/points/')}});});
+ await page.evaluate(async()=>{window.picker.destroy();const {createPointkit}=await import('/dist/index.js');window.picker=createPointkit({share:{endpoint:'/api/points'},onError:e=>window.lastError=e.message});});
+ await page.keyboard.press('Meta+c');const box=await page.locator('#primary').boundingBox();await page.mouse.click(box.x+5,box.y+5);
+ await expect(page.locator('.pointkit-composer')).toBeVisible();await expect(page.locator('.pointkit-preview-image')).toBeVisible();expect(uploads).toBe(0);
+ await page.locator('.pointkit-note').fill('메모를 입력합니다.');
+ await page.keyboard.press('Escape');await expect(page.locator('.pointkit-composer')).toHaveCount(0);expect(uploads).toBe(0);
+ await page.keyboard.press('Meta+c');await page.mouse.click(box.x+5,box.y+5);await expect(page.locator('.pointkit-preview-image')).toBeVisible();
+ await page.locator('.pointkit-note').fill('실제 메모');await page.locator('.pointkit-submit').click();
+ await expect(page.locator('.pointkit-composer')).toHaveCount(0);expect(uploads).toBe(1);expect(payload.context.note).toBe('실제 메모');expect(payload.image.data_url).toMatch(/^data:image\/png;base64,/);expect(payload.image.width).toBeGreaterThan(1);expect(await page.evaluate(()=>navigator.clipboard.readText())).toBe(url);
+});
+
+test('private input image is redacted and clipboard retry reuses its saved receipt',async({page})=>{
+ let uploads=0,payload;const url='http://127.0.0.1:4173/points/'+'c'.repeat(32);
+ await page.route('**/api/points',async route=>{uploads++;payload=route.request().postDataJSON();await route.fulfill({status:201,json:{id:'c'.repeat(32),url,delete_token:'delete',api_url:url.replace('/points/','/api/points/'),expires_at:'2030-01-01'}});});
+ await page.evaluate(async()=>{window.picker.destroy();const {createPointkit}=await import('/dist/index.js');window.picker=createPointkit({share:{endpoint:'/api/points'}});window.originalWrite=navigator.clipboard.write.bind(navigator.clipboard);navigator.clipboard.write=()=>Promise.reject(new Error('denied'));});
+ await page.keyboard.press('Meta+c');const box=await page.locator('#input').boundingBox();await page.mouse.click(box.x+5,box.y+5);
+ await expect(page.locator('.pointkit-preview-image')).toBeVisible();await page.locator('.pointkit-submit').click();await expect(page.locator('.pointkit-submit')).toHaveText('저장된 링크 다시 복사');
+ expect(uploads).toBe(1);expect(payload.context.text).toBe('');expect(payload.image.redacted).toBe(true);expect(JSON.stringify(payload)).not.toContain('Native input copy');
+ await page.evaluate(()=>navigator.clipboard.write=window.originalWrite);await page.locator('.pointkit-submit').click();await expect(page.locator('.pointkit-composer')).toHaveCount(0);expect(uploads).toBe(1);expect(await page.evaluate(()=>navigator.clipboard.readText())).toBe(url);
+});
+
+test('capture failure requires explicit image-free sharing and preserves the memo',async({page})=>{
+ let uploads=0,payload;const url='http://127.0.0.1:4173/points/'+'d'.repeat(32);
+ await page.route('**/api/points',async route=>{uploads++;payload=route.request().postDataJSON();await route.fulfill({status:201,json:{id:'d'.repeat(32),url,delete_token:'delete',api_url:url.replace('/points/','/api/points/'),expires_at:'2030-01-01'}});});
+ await page.evaluate(async()=>{window.picker.destroy();const {createPointkit}=await import('/dist/index.js');window.picker=createPointkit({share:{endpoint:'/api/points'}});HTMLCanvasElement.prototype.toDataURL=()=>{throw new Error('Canvas unavailable');};});
+ await page.keyboard.press('Meta+c');const box=await page.locator('#primary').boundingBox();await page.mouse.click(box.x+5,box.y+5);
+ await expect(page.locator('.pointkit-preview-status')).toHaveText('이미지 생성 실패');expect(uploads).toBe(0);
+ await page.locator('.pointkit-note').fill('이미지 없이 전달하는 메모');await page.locator('.pointkit-submit').filter({hasText:'이미지 없이 공유'}).click();
+ await expect(page.locator('.pointkit-composer')).toHaveCount(0);expect(uploads).toBe(1);expect(payload.image).toBeUndefined();expect(payload.context.note).toBe('이미지 없이 전달하는 메모');
 });

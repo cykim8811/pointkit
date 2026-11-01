@@ -44,3 +44,22 @@ test('signed HTTP-only browser session authorizes writes and logout clears cooki
  const modified=session.slice(0,-1)+(session.endsWith('a')?'b':'a');assert.equal((await (await request('/api/session',{headers:{Cookie:modified}})).json()).connected,false);
  const logout=await request('/api/session',{method:'DELETE',headers:{Cookie:session}});assert.equal(logout.status,204);assert.ok(logout.headers.get('set-cookie').includes('Max-Age=0'));
 });
+
+const png='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jX1kAAAAASUVORK5CYII=';
+test('PNG and memo are public by capability, correctly typed, escaped, and expire together',async t=>{
+ let now=200000;const {request}=await service(t,{now:()=>now});
+ const created=await request('/api/points',post({context:{...context,note:'<script>alert(1)</script>\n두 번째 줄'},image:{data_url:png,width:9999,height:9999},expires_in:60}));
+ assert.equal(created.status,201);const receipt=await created.json();assert.equal(receipt.image.width,1);assert.equal(receipt.image.height,1);
+ const publicPoint=await (await request('/api/points/'+receipt.id)).json();assert.equal(publicPoint.image.url,receipt.image.url);assert.ok(!JSON.stringify(publicPoint).includes('base64'));
+ const image=await request('/api/points/'+receipt.id+'/image');assert.equal(image.status,200);assert.equal(image.headers.get('content-type'),'image/png');assert.equal(Buffer.from(await image.arrayBuffer()).toString('base64'),png.split(',')[1]);
+ const html=await (await request('/points/'+receipt.id,{headers:{Accept:'text/html'}})).text();assert.ok(html.includes('id="point-image"'));assert.ok(html.includes('id="point-note"'));assert.ok(html.includes('&lt;script&gt;alert(1)'));assert.ok(!html.includes('<script>alert'));
+ now+=61;assert.equal((await request('/api/points/'+receipt.id+'/image')).status,410);assert.equal((await request('/api/points/'+receipt.id)).status,404);
+});
+
+test('reject non-PNG, malformed/oversized images and long notes; enforce byte quota',async t=>{
+ const {request}=await service(t);
+ for(const image of [{data_url:'data:image/svg+xml;base64,PHN2Zz4='},{data_url:'data:image/png;base64,YmFk'}]) assert.equal((await request('/api/points',post({context,image}))).status,400);
+ assert.equal((await request('/api/points',post({context,image:{data_url:'data:image/png;base64,'+Buffer.alloc(1048577).toString('base64')}}))).status,413);
+ assert.equal((await request('/api/points',post({context:{...context,note:'a'.repeat(4001)}}))).status,400);
+ const limited=await service(t,{maxStorageBytes:10});assert.equal((await limited.request('/api/points',post({context,image:{data_url:png}}))).status,507);
+});
