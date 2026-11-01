@@ -1,6 +1,6 @@
 {
   "name": "@cykim8811/pointkit",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Point at UI elements and copy precise context for your AI coding agent.",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -32,11 +32,13 @@
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "npm run build && node --test tests/package.test.mjs && playwright test",
+    "test": "npm run build && node --test tests/package.test.mjs tests/service.test.mjs && playwright test",
     "test:browser": "playwright test",
     "typecheck": "tsc --noEmit --strict --lib ES2022,DOM --module NodeNext --moduleResolution NodeNext tests/types.mts",
     "prepack": "npm run build",
-    "dev": "node scripts/serve.mjs"
+    "dev": "node scripts/serve.mjs",
+    "start": "node --env-file-if-exists=.env service/server.mjs",
+    "test:service": "node --test tests/service.test.mjs"
   },
   "repository": {
     "type": "git",

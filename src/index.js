@@ -1,4 +1,6 @@
 import css from './style.css';
+import { uploadPoint } from './share.js';
+export { uploadPoint } from './share.js';
 
 const instances = new WeakMap();
 const editableSelector = 'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"]';
@@ -136,11 +138,23 @@ export function createPointkit(options = {}) {
     const extra = options.getContext?.(element, base) ?? {};
     if (extra && typeof extra.then === 'function') throw new TypeError('getContext must return synchronously to preserve clipboard user activation.');
     const context = { ...extra, ...base };
-    const text = JSON.stringify(context, null, 2);
     deactivate();
     if (!win.navigator.clipboard?.writeText) throw new Error('Clipboard access requires HTTPS or localhost and a user gesture.');
-    await win.navigator.clipboard.writeText(text);
-    options.onCopy?.({ element, context, text });
+    let text = JSON.stringify(context, null, 2), receipt;
+    if (options.share) {
+      const shared = uploadPoint(context, { ...options.share, endpoint:new URL(options.share.endpoint, doc.URL).href }).then(result => {
+        receipt=result; text=result.url; options.onUpload?.(result); return text;
+      });
+      // Start clipboard permission inside the click, before waiting for the server.
+      // Promise-backed ClipboardItem preserves user activation on Safari as well.
+      const writing = win.ClipboardItem && win.navigator.clipboard.write
+        ? win.navigator.clipboard.write([new win.ClipboardItem({'text/plain':shared.then(value => new win.Blob([value], {type:'text/plain'}))})])
+        : shared.then(value => win.navigator.clipboard.writeText(value));
+      const [uploaded, written] = await Promise.allSettled([shared, writing]);
+      if(uploaded.status==='rejected') throw uploaded.reason;
+      if(written.status==='rejected') throw written.reason;
+    } else await win.navigator.clipboard.writeText(text);
+    options.onCopy?.({ element, context, text, ...(receipt ? {receipt} : {}) });
     return context;
   }
   function intercept(event) {

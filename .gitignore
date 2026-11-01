@@ -5,3 +5,6 @@ playwright-report/
 test-results/
 .npmrc
 .env*
+data/
+ACCESS.md
+!.env.example

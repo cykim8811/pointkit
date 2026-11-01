@@ -88,6 +88,44 @@ export function DevTools() {
 }
 ```
 
+## Share a point as a link
+
+The upcoming 0.2.0 API adds optional uploads. Without `share`, existing local JSON copying stays unchanged.
+
+```js
+const picker = createPointkit({
+  share: {
+    endpoint: 'https://pointkit.dev/api/points',
+    token: 'YOUR_UPLOAD_KEY',
+    expiresIn: 7 * 24 * 60 * 60,
+  },
+  onUpload: receipt => {
+    // Keep receipt.delete_token if you want to delete the point later.
+    // This callback also preserves the link if clipboard access fails.
+  },
+  onCopy: ({ text, receipt }) => {
+    // text is now a URL such as https://pointkit.dev/points/{id}.
+  },
+  onError: error => console.error(error.message),
+});
+```
+
+The service returns a 128-bit random ID. Anyone holding the URL can read it: `/points/{id}` displays a page, `Accept: application/json` on that URL or `/api/points/{id}` returns JSON for an agent. Default expiry is 7 days. Upload and deletion require credentials. The payload contains the same DOM context as local copying, plus your explicit `getContext` additions; Pointkit does not add screenshots.
+
+A token embedded in a frontend is visible to its users. Protect server credentials behind your own upload proxy for public applications. Requests use omitted credentials by default; the same-origin service UI explicitly uses its HttpOnly session cookie. Uploads reject redirects, time out after 15 seconds, and report failure without silently copying a broken link. Promise-backed clipboard writes are used where supported so the original click can authorize the copy while upload is pending. `onUpload` runs as soon as the server returns a receipt; use it to retain the URL and deletion token even if the clipboard write fails.
+
+To upload independently of the picker:
+
+```js
+import { describeElement, uploadPoint } from '@cykim8811/pointkit';
+const receipt = await uploadPoint(describeElement(element), {
+  endpoint: 'https://pointkit.dev/api/points',
+  token: 'YOUR_UPLOAD_KEY',
+});
+```
+
+See [the points service guide](service/README.md) to run or deploy the HTTP + SQLite service. The service source stays in GitHub; the npm artifact still contains only the browser library, styles, types and documentation.
+
 ## Copied context
 
 ```json

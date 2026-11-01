@@ -1,0 +1,130 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pointkit-data
+  namespace: coders-system
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: standard-rwo
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pointkit
+  namespace: coders-system
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: pointkit
+  template:
+    metadata:
+      labels:
+        app: pointkit
+    spec:
+      automountServiceAccountToken: false
+      nodeSelector:
+        coders.kr/node-role: infrastructure
+      tolerations:
+        - key: coders.kr/infrastructure
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      containers:
+        - name: pointkit
+          image: asia-northeast3-docker.pkg.dev/coders-497813/platform-images/pointkit:initial
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - secretRef:
+                name: pointkit-env
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: pointkit-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pointkit
+  namespace: coders-system
+spec:
+  selector:
+    app: pointkit
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: pointkit
+  namespace: coders-system
+spec:
+  secretName: pointkit-tls
+  dnsNames: [pointkit.dev]
+  issuerRef:
+    name: pointkit-letsencrypt
+    kind: Issuer
+---
+apiVersion: networking.internal.knative.dev/v1alpha1
+kind: Ingress
+metadata:
+  name: pointkit
+  namespace: coders-system
+  annotations:
+    networking.knative.dev/ingress.class: kourier.ingress.networking.knative.dev
+spec:
+  httpOption: Redirected
+  rules:
+    - hosts: [pointkit.dev]
+      visibility: ExternalIP
+      http:
+        paths:
+          - splits:
+              - serviceName: pointkit
+                serviceNamespace: coders-system
+                servicePort: 80
+                percent: 100
+  tls:
+    - hosts: [pointkit.dev]
+      secretName: pointkit-tls
+      secretNamespace: coders-system

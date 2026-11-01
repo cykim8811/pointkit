@@ -11,10 +11,30 @@ export interface ElementContext {
 }
 export interface CopyEvent {
   element: Element;
+  receipt?: PointReceipt;
   context: ElementContext;
   text: string;
 }
+export interface PointReceipt {
+  id: string;
+  url: string;
+  api_url: string;
+  expires_at: string;
+  delete_token: string;
+}
+export interface ShareOptions {
+  endpoint: string;
+  /** Upload-only credential. Do not use a server administrator key in public apps. */
+  token?: string;
+  expiresIn?: number;
+  credentials?: RequestCredentials;
+}
+export declare function uploadPoint(context: ElementContext, options: ShareOptions): Promise<PointReceipt>;
 export interface PointkitOptions {
+  /** Upload context and copy a link instead of JSON. Omit to keep local-only copying. */
+  share?: ShareOptions;
+  /** Preserve this receipt if you need the delete token or clipboard access fails. */
+  onUpload?: (receipt: PointReceipt) => void;
   document?: Document;
   /** Disable automatic Cmd+C / Ctrl+C; activate() remains available. */
   shortcut?: false;

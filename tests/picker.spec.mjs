@@ -107,3 +107,25 @@ test('strict CSP supports externally linked CSS without style injection', async 
   const box=await page.locator('#target').boundingBox();await page.mouse.move(box.x+2,box.y+2);
   expect(await page.locator('#target').evaluate(e=>getComputedStyle(e).outlineStyle)).toBe('solid');
 });
+
+test('sharing uploads first and copies only the returned link with deletion receipt',async({page})=>{
+ const id='a'.repeat(32),url='http://127.0.0.1:4173/points/'+id;
+ let uploaded;
+ await page.route('**/api/points',async route=>{
+  uploaded=route.request().postDataJSON();expect(route.request().headers().authorization).toBe('Bearer write-only');
+  await new Promise(resolve=>setTimeout(resolve,100));
+  await route.fulfill({status:201,json:{id,url,api_url:'http://127.0.0.1:4173/api/points/'+id,delete_token:'delete-only-token',expires_at:'2030-01-01T00:00:00Z'}});
+ });
+ await page.evaluate(async()=>{window.picker.destroy();const {createPointkit}=await import('/dist/index.js');window.picker=createPointkit({share:{endpoint:'/api/points',token:'write-only',expiresIn:3600},onUpload:receipt=>window.receipt=receipt,onCopy:event=>window.copied=event,onError:error=>window.shareError=error.message});});
+ await page.keyboard.press('Meta+c');const box=await page.locator('#primary').boundingBox();await page.mouse.click(box.x+5,box.y+5);
+ await page.waitForFunction(()=>Boolean(window.copied));expect(await page.evaluate(()=>navigator.clipboard.readText())).toBe(url);
+ expect(uploaded.context.selector).toBe('#primary');expect(uploaded.expires_in).toBe(3600);
+ expect(await page.evaluate(()=>window.receipt.delete_token)).toBe('delete-only-token');expect(await page.evaluate(()=>window.shareError)).toBeUndefined();
+});
+
+test('failed uploads report an error instead of copying a misleading link',async({page})=>{
+ await page.route('**/api/points',route=>route.fulfill({status:401,json:{error:'An upload key is required.'}}));
+ await page.evaluate(async()=>{window.picker.destroy();const {createPointkit}=await import('/dist/index.js');window.picker=createPointkit({share:{endpoint:'/api/points'},onCopy:()=>window.unexpectedCopy=true,onError:error=>window.shareError=error.message});});
+ await page.keyboard.press('Control+c');const box=await page.locator('#primary').boundingBox();await page.mouse.click(box.x+5,box.y+5);
+ await page.waitForFunction(()=>Boolean(window.shareError));expect(await page.evaluate(()=>window.shareError)).toBe('An upload key is required.');expect(await page.evaluate(()=>window.unexpectedCopy)).toBeUndefined();
+});
